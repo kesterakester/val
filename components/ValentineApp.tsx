@@ -9,6 +9,8 @@ import { supabase } from '@/lib/supabase'
 import HeartBackground from './HeartBackground'
 import { cn } from '@/lib/utils'
 
+const BASE_PATH = '/val' // Matches next.config.ts basePath
+
 type QuestionType = 'text' | 'choice'
 
 interface Question {
@@ -82,25 +84,28 @@ export default function ValentineApp() {
 
     const createSession = async (useName: string) => {
         try {
-            const { data } = await supabase.from('valentine_responses').insert({
-                name: useName,
-                created_at: new Date().toISOString(),
-                answers: [],
-                yes_attempts: 0,
-                no_attempts: 0,
-                final_response: 'PENDING'
+            // Match the user_sessions table in schema.sql
+            const { data, error } = await supabase.from('user_sessions').insert({
+                user_name: useName,
+                final_response: 'PENDING',
+                completed: false
             }).select().single()
+
+            if (error) throw error
             if (data) setDbId(data.id)
         } catch (e) {
-            console.error(e)
+            console.error('Error creating session:', e)
         }
     }
 
     const updateSession = async (updates: any) => {
         if (!dbId) return
         try {
-            await supabase.from('valentine_responses').update(updates).eq('id', dbId)
-        } catch (e) { }
+            const { error } = await supabase.from('user_sessions').update(updates).eq('id', dbId)
+            if (error) throw error
+        } catch (e) {
+            console.error('Error updating session:', e)
+        }
     }
 
     const handleStart = () => {
@@ -143,6 +148,22 @@ export default function ValentineApp() {
         // 2. Wait 2 seconds then process
         setTimeout(async () => {
             const currentQuestion = QUESTIONS[qIndex]
+
+            // 3. Store in question_answers table
+            if (dbId) {
+                try {
+                    await supabase.from('question_answers').insert({
+                        session_id: dbId,
+                        question_number: qIndex + 1,
+                        question_text: currentQuestion.text,
+                        answer_text: answer,
+                        answer_type: currentQuestion.type
+                    })
+                } catch (e) {
+                    console.error('Error saving answer:', e)
+                }
+            }
+
             const newEntry = { question: currentQuestion.text, answer: answer }
             const newAnswers = [...allAnswers, newEntry]
 
@@ -150,11 +171,10 @@ export default function ValentineApp() {
             setAnswer('')
             setCompliment('') // Clear compliment
 
-            await updateSession({ answers: newAnswers })
-
             if (qIndex < QUESTIONS.length - 1) {
                 setQIndex(prev => prev + 1)
             } else {
+                updateSession({ completed: true })
                 setState('MESSAGE')
             }
         }, 2000)
@@ -166,9 +186,18 @@ export default function ValentineApp() {
         fireConfetti()
     }
 
-    const handleNo = () => {
-        setNoCount(prev => prev + 1)
-        updateSession({ no_attempts: noCount + 1 })
+    const handleNo = async () => {
+        const newCount = noCount + 1
+        setNoCount(newCount)
+        if (dbId) {
+            try {
+                await supabase.from('proposal_interactions').insert({
+                    session_id: dbId,
+                    interaction_type: 'NO',
+                    no_attempt_count: newCount
+                })
+            } catch (e) { }
+        }
     }
 
     /* FLAMES Logic */
@@ -234,7 +263,7 @@ export default function ValentineApp() {
         return "Promising Start! Every love story has a beginning! 🌱💝"
     }
 
-    const handleFlamesCalculate = () => {
+    const handleFlamesCalculate = async () => {
         if (!flamesName1.trim() || !flamesName2.trim()) return
         const result = calculateFlames(flamesName1, flamesName2)
         const percentage = calculateLove(flamesName1, flamesName2)
@@ -245,6 +274,20 @@ export default function ValentineApp() {
         setLoveMessage(message)
         setShowTryAgain(true)
         setCountdown(6)
+
+        // Store in flames_results table
+        if (dbId) {
+            try {
+                await supabase.from('flames_results').insert({
+                    session_id: dbId,
+                    name1: flamesName1,
+                    name2: flamesName2,
+                    flames_result: result,
+                    love_percentage: percentage,
+                    love_message: message
+                })
+            } catch (e) { }
+        }
     }
 
     // Countdown timer effect for FLAMES result
@@ -277,7 +320,7 @@ export default function ValentineApp() {
         setCountdown(6)
     }
 
-    const handleLoveCalculate = () => {
+    const handleLoveCalculate = async () => {
         if (!loveName1.trim() || !loveName2.trim()) return
         const percentage = calculateLove(loveName1, loveName2)
         const message = getLoveMessage(percentage)
@@ -285,6 +328,21 @@ export default function ValentineApp() {
         setLoveMessage(message)
         setShowLoveTryAgain(true)
         setLoveCountdown(6)
+
+        // Store in love_calculator_results table
+        if (dbId) {
+            try {
+                await supabase.from('love_calculator_results').insert({
+                    session_id: dbId,
+                    name1: loveName1,
+                    name2: loveName2,
+                    love_percentage: percentage,
+                    love_message: message
+                })
+            } catch (e) {
+                console.error('Error saving love calculator result:', e)
+            }
+        }
     }
 
     const handleLoveTryAgain = () => {
@@ -334,15 +392,15 @@ export default function ValentineApp() {
     const currentQ = QUESTIONS[qIndex];
 
     return (
-        <div className="relative min-h-screen flex flex-col items-center justify-center p-4 md:p-6 font-romantic select-none overflow-x-hidden overflow-y-auto">
+        <div className="relative min-h-screen flex flex-col items-center justify-center p-4 md:p-6 font-romantic select-none overflow-x-hidden">
             <HeartBackground />
 
             {/* Decorative Flowers */}
             <div className="fixed top-0 left-0 w-32 h-32 md:w-64 md:h-64 pointer-events-none z-0 opacity-80">
-                <Image src="/flowers_v2.png" alt="flowers" fill className="object-contain -translate-x-10 -translate-y-10 rotate-12" />
+                <Image src={`${BASE_PATH}/flowers_v2.png`} alt="flowers" fill className="object-contain -translate-x-10 -translate-y-10 rotate-12" />
             </div>
             <div className="fixed bottom-0 right-0 w-32 h-32 md:w-64 md:h-64 pointer-events-none z-0 opacity-80">
-                <Image src="/flowers_v2.png" alt="flowers" fill className="object-contain translate-x-10 translate-y-10 rotate-180" />
+                <Image src={`${BASE_PATH}/flowers_v2.png`} alt="flowers" fill className="object-contain translate-x-10 translate-y-10 rotate-180" />
             </div>
 
             {/* ROOT LEVEL ESCAPING BUTTON - Avoids clipping/transform issues */}
@@ -899,7 +957,7 @@ export default function ValentineApp() {
                     >
                         <div className="mb-6 relative w-48 h-48 md:w-64 md:h-64 animate-float">
                             <Image
-                                src={noCount > 0 ? "/crying-teddy_final.png" : "/intro-bear.png"}
+                                src={noCount > 0 ? `${BASE_PATH}/crying-teddy_final.png` : `${BASE_PATH}/intro-bear.png`}
                                 alt="Cute Bear"
                                 fill
                                 className="object-contain drop-shadow-2xl transition-all duration-300"
@@ -963,7 +1021,7 @@ export default function ValentineApp() {
                     >
                         <div className="mb-8 relative w-64 h-64">
                             <Image
-                                src="/celebration.png"
+                                src={`${BASE_PATH}/celebration.png`}
                                 alt="Celebration"
                                 fill
                                 className="object-contain drop-shadow-2xl"
