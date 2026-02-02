@@ -437,7 +437,7 @@ export default function ValentineApp() {
                         <h1 className="text-3xl md:text-4xl font-bold italic text-rose-900 mb-2 drop-shadow-sm">Hello beautiful...</h1>
                         <p className="text-rose-800 mb-2 font-medium italic">Before we begin, may I know your name?</p>
                         <p className="text-rose-600 text-xs italic mb-6 bg-rose-50/50 p-2 rounded-lg border border-rose-200">
-                            💡 We'll use this name throughout the experience (including FLAMES!)
+                            💡Use your real name for the best experience. Your data is never saved.
                         </p>
 
                         <input
